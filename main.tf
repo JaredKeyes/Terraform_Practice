@@ -36,8 +36,11 @@ resource "aws_launch_configuration" "example" {
 }
 
 resource "aws_autoscaling_group" "example" {
-  launch_configuration = aws_launch_configuaration.example.name
+  launch_configuration = aws_launch_configuration.example.name
   vpc_zone_identifier  = data.aws_subnets.default.ids
+
+  target_group_arns = [aws_lb_target_group.asg.arn]
+  health_check_type = "ELB"
 
   min_size = 2
   max_size = 10
@@ -83,6 +86,39 @@ resource "aws_lb_listener" "http" {
   }
 }
 
+resource "aws_lb_listener_rule" "asg" {
+  listener_arn = aws_lb_listener.http.arn
+  priority = 100
+
+  condition {
+    path_pattern {
+      values = ["*"]
+    }
+  }
+
+  action {
+    type = "forward"
+    target_group_arn = aws_lb_target_group.asg.arn
+  }
+}
+
+resource "aws_lb_target_group" "asg" {
+  name = "terraform-asg-example"
+  port = var.server_port
+  protocol = "HTTP"
+  vpc_id = data.aws_vpc.default.id
+
+  health_check {
+    path = "/"
+    protocol = "HTTP"
+    matcher = "200"
+    interval = 15
+    timeout = 3
+    healthy_threshold = 2
+    unhealthy_threshold = 2
+  }  
+}
+
 resource "aws_security_group" "alb" {
   name = "terraform-example-alb"
 
@@ -101,7 +137,7 @@ resource "aws_security_group" "alb" {
   }
 }
 
-output "public_ip" {
-  value       = aws_instance.example.public_ip
-  description = "The public IP address of the web server"
+output "alb_dns_name" {
+  value       = aws_lb.example.dns_name
+  description = "The domain name of the load balancer"
 }
