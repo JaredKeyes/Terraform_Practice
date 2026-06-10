@@ -19,16 +19,20 @@ variable "server_port" {
   default     = 8080
 }
 
-resource "aws_launch_configuration" "example" {
-  image_id        = "ami-091138d0f0d41ff90"
-  instance_type   = "t2.micro"
-  security_groups = [aws_security_group.instance.id]
+resource "aws_launch_template" "example" {
+  name_prefix   = "terraform-example-"
+  image_id      = "ami-091138d0f0d41ff90"
+  instance_type = "t2.micro"
 
-  user_data = <<-EOF
+  vpc_security_group_ids = [aws_security_group.instance.id]
+
+  user_data = base64encode(<<-EOF
               #!/bin/bash
               echo "Hello, World" > index.html
               nohup busybox httpd -f -p ${var.server_port} &
               EOF
+
+  )
 
   lifecycle {
     create_before_destroy = true
@@ -36,14 +40,18 @@ resource "aws_launch_configuration" "example" {
 }
 
 resource "aws_autoscaling_group" "example" {
-  launch_configuration = aws_launch_configuration.example.name
-  vpc_zone_identifier  = data.aws_subnets.default.ids
+  vpc_zone_identifier = data.aws_subnets.default.ids
 
   target_group_arns = [aws_lb_target_group.asg.arn]
   health_check_type = "ELB"
 
   min_size = 2
   max_size = 10
+
+  launch_template {
+    id      = aws_launch_template.example.id
+    version = "$Latest"
+  }
 
   tag {
     key                 = "Name"
@@ -67,7 +75,7 @@ resource "aws_lb" "example" {
   name               = "terraform-asg-example"
   load_balancer_type = "application"
   subnets            = data.aws_subnets.default.ids
-  security_groups = [aws_security_group.alb.id]
+  security_groups    = [aws_security_group.alb.id]
 }
 
 resource "aws_lb_listener" "http" {
@@ -88,7 +96,7 @@ resource "aws_lb_listener" "http" {
 
 resource "aws_lb_listener_rule" "asg" {
   listener_arn = aws_lb_listener.http.arn
-  priority = 100
+  priority     = 100
 
   condition {
     path_pattern {
@@ -97,42 +105,42 @@ resource "aws_lb_listener_rule" "asg" {
   }
 
   action {
-    type = "forward"
+    type             = "forward"
     target_group_arn = aws_lb_target_group.asg.arn
   }
 }
 
 resource "aws_lb_target_group" "asg" {
-  name = "terraform-asg-example"
-  port = var.server_port
+  name     = "terraform-asg-example"
+  port     = var.server_port
   protocol = "HTTP"
-  vpc_id = data.aws_vpc.default.id
+  vpc_id   = data.aws_vpc.default.id
 
   health_check {
-    path = "/"
-    protocol = "HTTP"
-    matcher = "200"
-    interval = 15
-    timeout = 3
-    healthy_threshold = 2
+    path                = "/"
+    protocol            = "HTTP"
+    matcher             = "200"
+    interval            = 15
+    timeout             = 3
+    healthy_threshold   = 2
     unhealthy_threshold = 2
-  }  
+  }
 }
 
 resource "aws_security_group" "alb" {
   name = "terraform-example-alb"
 
   ingress {
-    from_port = 80
-    to_port = 80
-    protocol = "tcp"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
   egress {
-    from_port = 0
-    to_port = 0
-    protocol = "-1"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
 }
